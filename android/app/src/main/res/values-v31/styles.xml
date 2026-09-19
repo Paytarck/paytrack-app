@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <!-- This removes the yellow and forces white -->
+        <item name="windowSplashScreenBackground">#FFFFFF</item>
+
+        <!-- This centers your logo -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash</item>
+
+        <!-- This tells the app what theme to use after the splash screen is done -->
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
+    </style>
+</resources>

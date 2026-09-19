@@ -1,0 +1,15 @@
+{
+  "appId": "com.paytrack.app",
+  "appName": "Paytrack",
+  "webDir": "www",  <-- DOUBLE CHECK THIS NAME
+  "bundledWebRuntime": false
+}
+
+"plugins": {
+  "SplashScreen": {
+    "launchShowDuration": 2000,
+    "backgroundColor": "#FFFFFF",
+    "androidScaleType": "CENTER_INSIDE",
+    "splashMainBackgroundColor": "#FFFFFF"
+  }
+}

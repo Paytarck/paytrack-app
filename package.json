@@ -1,0 +1,31 @@
+{
+  "name": "paytrack",
+  "version": "1.0.0",
+  "description": "",
+  "main": "auth.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@capacitor-community/admob": "^8.0.0",
+    "@capacitor-community/text-to-speech": "^8.0.0",
+    "@capacitor/android": "^8.2.0",
+    "@capacitor/camera": "^8.0.2",
+    "@capacitor/cli": "^8.2.0",
+    "@capacitor/core": "^8.2.0",
+    "@capacitor/haptics": "^8.0.1",
+    "@capacitor/local-notifications": "^8.1.0",
+    "@capacitor/status-bar": "^8.0.2",
+    "@capgo/capacitor-native-biometric": "^8.4.2",
+    "@capgo/native-audio": "^8.3.8",
+    "capacitor-native-biometric": "^4.2.2",
+    "firebase": "^12.11.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5"
+  }
+}
