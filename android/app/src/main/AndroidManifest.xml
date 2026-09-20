@@ -29,14 +29,17 @@
             android:exported="true">
             <!-- NOTE: I changed the theme above to AppCompat to prevent splash screen crashes -->
 
-            <intent-filter>
-    <action android:name="android.intent.action.SEND" />
-    <category android:name="android.intent.category.DEFAULT" />
-    <data android:mimeType="image/*" />
-</intent-filter>
-        </activity>
+                    <intent-filter>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent-filter>
 
-        <!-- 3. FILE PROVIDER (Required for Camera) -->
+        <intent-filter>
+            <action android:name="android.intent.action.SEND" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <data android:mimeType="image/*" />
+        </intent-filter>
+        </activity>        <!-- 3. FILE PROVIDER (Required for Camera) -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
