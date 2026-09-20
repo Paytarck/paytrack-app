@@ -23,6 +23,9 @@ project(':capacitor-status-bar').projectDir = new File('../node_modules/@capacit
 include ':capgo-capacitor-native-biometric'
 project(':capgo-capacitor-native-biometric').projectDir = new File('../node_modules/@capgo/capacitor-native-biometric/android')
 
+include ':capgo-capacitor-share-target'
+project(':capgo-capacitor-share-target').projectDir = new File('../node_modules/@capgo/capacitor-share-target/android')
+
 include ':capgo-native-audio'
 project(':capgo-native-audio').projectDir = new File('../node_modules/@capgo/native-audio/android')
 

@@ -3,14 +3,48 @@ import { db, doc, setDoc, getDoc, updateDoc, auth, googleProvider, signInWithPop
 import { onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { collection, addDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+// --- OFFLINE-HANG PROTECTION ---
+// The Firestore Web SDK has a well-documented behavior where an awaited
+// write (setDoc/updateDoc/addDoc) never resolves OR rejects while the
+// device is offline — the write is still applied to Firestore's local
+// cache and will sync to the server automatically once connectivity
+// returns, but the Promise itself just hangs forever instead of failing
+// fast. (https://github.com/firebase/firebase-js-sdk/issues/8657)
+// getDoc() is unaffected by this and needs no wrapping.
+// Every write below is wrapped in one of these so a lost connection can
+// never freeze the UI in a permanent loading state.
+
+// For best-effort background syncs where the caller already treats
+// failure as "fine, we'll catch up later": give up waiting after `ms` and
+// let the caller carry on as if it finished — the write is already safely
+// queued in Firestore's local cache and will reach the server on its own.
+function withTimeout(promise, ms = 6000) {
+    return Promise.race([
+        Promise.resolve(promise),
+        new Promise(resolve => setTimeout(resolve, ms))
+    ]);
+}
+
+// For writes the caller genuinely needs an honest outcome for (creating an
+// account, logging in, changing a PIN): reject with a clear error after
+// `ms` instead of resolving silently, so the caller's existing "offline /
+// failed" handling actually runs instead of hanging forever with no
+// feedback at all.
+function withTimeoutStrict(promise, ms = 8000) {
+    return Promise.race([
+        Promise.resolve(promise),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Request timed out. Check your internet connection.')), ms))
+    ]);
+}
+
 export async function submitFeedbackToCloud(feedbackData) {
     try {
         const feedbackRef = collection(db, "feedback");
-        await addDoc(feedbackRef, {
+        await withTimeoutStrict(addDoc(feedbackRef, {
             ...feedbackData,
             timestamp: new Date().toISOString(),
             status: "unread" // Useful for you to track which ones you've seen
-        });
+        }));
         return true;
     } catch (e) {
         console.error("Feedback Error:", e);
@@ -121,7 +155,7 @@ export async function updateGlobalCard(project, projectData) {
     try {
         // merge: true is important here — it stops a routine data sync from wiping out
         // other fields on the card document that aren't part of this payload.
-        await setDoc(cardRef, payload, { merge: true });
+        await withTimeout(setDoc(cardRef, payload, { merge: true }));
     } catch (e) {
         console.error("🔥 CLOUD ERROR:", e);
         if (e.message.includes('too large')) {
@@ -171,12 +205,12 @@ export async function handleGoogleAuth() {
 
         if (!userSnap.exists()) {
             // New User: Register with this device
-            await setDoc(userRef, {
+            await withTimeoutStrict(setDoc(userRef, {
                 username: username, email: user.email, displayName: user.displayName,
                 authProvider: 'google', createdAt: new Date().toISOString(),
                 activeDevices: [deviceId], // Add first device
                 data: { projects: [], settings: {}, globalSettings: {} }
-            });
+            }));
         } else {
             // Existing user: record this device if it isn't already known.
             // No cap on how many devices can be active at once — the account
@@ -186,7 +220,7 @@ export async function handleGoogleAuth() {
 
             if (!activeDevices.includes(deviceId)) {
                 activeDevices.push(deviceId);
-                await updateDoc(userRef, { activeDevices: activeDevices });
+                await withTimeoutStrict(updateDoc(userRef, { activeDevices: activeDevices }));
             }
         }
 
@@ -202,10 +236,10 @@ export async function registerUser(username, email, phone, pin) {
     const userSnap = await getDoc(userRef);
     if (userSnap.exists()) throw new Error("Username taken.");
     const hashedPin = await hashPin(pin);
-    await setDoc(userRef, {
+    await withTimeoutStrict(setDoc(userRef, {
         username, email, phone, pin: hashedPin, authProvider: 'local', createdAt: new Date().toISOString(),
         data: { projects: [], settings: {}, globalSettings: {} }
-    });
+    }));
     localStorage.setItem('paytrackUserSession', 'true');
     localStorage.setItem('paytrackUsername', username);
     return true;
@@ -221,7 +255,7 @@ export async function updateAccountPin(newPin) {
     if (!username) return;
     const hashedPin = await hashPin(newPin);
     const userRef = doc(db, "users", username);
-    await updateDoc(userRef, { pin: hashedPin });
+    await withTimeoutStrict(updateDoc(userRef, { pin: hashedPin }));
 }
 
 export async function loginUser(username, pin) {
@@ -241,7 +275,7 @@ export async function loginUser(username, pin) {
 
     if (!activeDevices.includes(deviceId)) {
         activeDevices.push(deviceId);
-        await updateDoc(userRef, { activeDevices: activeDevices });
+        await withTimeoutStrict(updateDoc(userRef, { activeDevices: activeDevices }));
     }
 
     localStorage.setItem('paytrackUserSession', 'true');
@@ -261,11 +295,11 @@ export async function syncDataToCloud() {
     try {
         // WE REMOVED projectDetails FROM HERE. 
         // We only sync the list of projects and the main settings.
-        await updateDoc(userRef, { 
+        await withTimeout(updateDoc(userRef, { 
             "data.projects": localProjects, 
             "data.globalSettings": globalSettings, 
             lastSynced: new Date().toISOString() 
-        });
+        }));
     } catch (error) { console.error("Sync failed:", error); }
 }
 
@@ -303,7 +337,7 @@ export async function logoutUser() {
             if (userSnap.exists()) {
                 const currentDevices = userSnap.data().activeDevices || [];
                 const updatedDevices = currentDevices.filter(id => id !== deviceId);
-                await updateDoc(userRef, { activeDevices: updatedDevices });
+                await withTimeout(updateDoc(userRef, { activeDevices: updatedDevices }));
                 console.log("Device removed from cloud.");
             }
         } catch (e) {
@@ -332,7 +366,7 @@ export async function clearAllDeviceSessions(username) {
     const userRef = doc(db, "users", username);
     try {
         // Force the activeDevices array to be empty in the cloud
-        await updateDoc(userRef, { activeDevices: [] });
+        await withTimeoutStrict(updateDoc(userRef, { activeDevices: [] }));
         console.log("All device sessions cleared in cloud.");
         return true;
     } catch (e) {

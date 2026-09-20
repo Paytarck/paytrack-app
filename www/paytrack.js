@@ -705,7 +705,50 @@ async function loadInitialData() {
     // This was previously defined but never invoked anywhere, so scheduled
     // shortcuts never actually fired. Run it once appState/shortcuts are loaded.
     checkAndRunAutoTransactions();
+
+    // 5. PROCESS AN INCOMING SHARED RECEIPT, IF ANY
+    // If the user got here by picking this project from the "select a
+    // project" prompt after sharing a receipt image into PayTrack from
+    // another app, scan it now automatically.
+    processPendingSharedReceipt();
 }
+
+// Reads a receipt image handed to us by share-intent.js (stored as a tiny
+// {uri, name, mimeType} pointer in sessionStorage — never the image bytes
+// themselves, so this survives the page navigation from dashboard.html
+// cheaply). Converts the native file URI back into a real File and feeds it
+// straight into the same OCR pipeline the manual "Scan Receipt" button uses.
+async function processPendingSharedReceipt() {
+    const raw = sessionStorage.getItem('paytrackPendingSharedReceipt');
+    if (!raw) return;
+    sessionStorage.removeItem('paytrackPendingSharedReceipt'); // consume once, whatever happens next
+
+    let shared;
+    try { shared = JSON.parse(raw); } catch (e) { return; }
+    if (!shared || !shared.uri) return;
+
+    try {
+        showNotification('Scanning shared receipt...', 'success');
+        // Capacitor.convertFileSrc() turns a native file:// / content:// path into
+        // a URL the WebView is actually allowed to fetch() from.
+        const webSrc = (window.Capacitor && window.Capacitor.convertFileSrc)
+            ? window.Capacitor.convertFileSrc(shared.uri)
+            : shared.uri;
+        const response = await fetch(webSrc);
+        const blob = await response.blob();
+        const file = new File([blob], shared.name || 'receipt.jpg', { type: shared.mimeType || blob.type || 'image/jpeg' });
+
+        if (elements.inputTypeSelectionModal) elements.inputTypeSelectionModal.classList.add('hidden');
+        await processScannedReceiptFile(file, 'expense');
+    } catch (err) {
+        console.error('Could not load shared receipt image:', err);
+        showNotification("Couldn't open the shared receipt. Please try scanning it manually.", 'error');
+    }
+}
+
+// Lets share-intent.js hand a receipt straight to this page when the app is
+// already open on a project (no need to bounce through the project picker).
+window.PayTrackReceiptIntake = { processPendingSharedReceipt };
 
 // Flash the little "Synced" pill in the header so the user gets quiet
 // visual confirmation whenever data moves to/from the cloud.
@@ -1261,85 +1304,8 @@ if (elements.receiptModal) {
         elements.globalImagePicker.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
-
             elements.inputTypeSelectionModal.classList.add('hidden');
-            if (elements.ocrLoadingOverlay) {
-                elements.ocrLoadingOverlay.classList.remove('hidden');
-                if (elements.ocrStatusText) elements.ocrStatusText.textContent = 'Reading text from image...';
-            }
-
-            try {
-                const extractedData = await scanReceiptImage(file, pendingTransactionType);
-
-                // Open the manual form and pre-fill it with whatever we found
-                openTransactionModal(pendingTransactionType);
-
-                if (extractedData.amount) {
-                    elements.modalAmount.value = extractedData.amount;
-                    if (typeof updateModalAmountWords === 'function') updateModalAmountWords();
-                    elements.modalAmount.style.backgroundColor = '#d1fae5';
-                    setTimeout(() => elements.modalAmount.style.backgroundColor = '', 1500);
-                }
-
-                if (extractedData.date) {
-                    elements.modalDate.value = extractedData.date;
-                }
-
-                if (extractedData.merchant) {
-                    elements.modalDescription.value = extractedData.merchant;
-                }
-
-                if (extractedData.category) {
-                    let options = Array.from(elements.modalCategory.options);
-                    let match = options.find(opt => opt.value.toLowerCase() === extractedData.category.toLowerCase());
-                    if (match) {
-                        elements.modalCategory.value = match.value;
-                    } else {
-                        elements.modalCategory.value = 'custom';
-                        elements.modalCustomCategoryName.value = extractedData.category;
-                        if (typeof handleModalCategoryChange === 'function') handleModalCategoryChange();
-                    }
-                }
-
-                if (extractedData.paymentMethod) {
-                    elements.modalPaymentMethod.value = extractedData.paymentMethod;
-                    if (typeof handleModalPaymentMethodChange === 'function') handleModalPaymentMethodChange();
-                }
-
-                // Auto-select the bank/wallet found on the receipt in the "Select Bank"
-                // dropdown (or drop it into "+ Add Custom Bank" if it's not one of the
-                // presets, e.g. JazzCash/EasyPaisa or a bank not in the default list).
-                if (extractedData.bankName) {
-                    const bankOptions = Array.from(elements.modalBankName.options).map(opt => opt.value);
-                    if (bankOptions.includes(extractedData.bankName)) {
-                        elements.modalBankName.value = extractedData.bankName;
-                    } else {
-                        elements.modalBankName.value = 'custom';
-                        elements.modalCustomBankName.value = extractedData.bankName;
-                    }
-                    if (typeof handleModalBankNameChange === 'function') handleModalBankNameChange();
-                }
-
-                // Attach the scanned image as the receipt (it will be optimized to ~30KB on save)
-                const dataTransfer = new DataTransfer();
-                dataTransfer.items.add(file);
-                elements.modalReceipt.files = dataTransfer.files;
-                if (typeof handleReceiptPreview === 'function') handleReceiptPreview();
-
-                if (elements.ocrLoadingOverlay) elements.ocrLoadingOverlay.classList.add('hidden');
-
-                if (extractedData.amount || extractedData.date || extractedData.merchant || extractedData.bankName) {
-                    showNotification('Receipt scanned. Please review the details.', 'success');
-                } else {
-                    showNotification("Couldn't read the receipt clearly. Please fill in the details.", 'error');
-                }
-
-            } catch (err) {
-                console.error('Receipt scan failed:', err);
-                if (elements.ocrLoadingOverlay) elements.ocrLoadingOverlay.classList.add('hidden');
-                showNotification('Scan failed. Please fill details manually.', 'error');
-                openTransactionModal(pendingTransactionType);
-            }
+            await processScannedReceiptFile(file, pendingTransactionType);
         });
     }
 
@@ -4172,6 +4138,90 @@ function checkAndRunAutoTransactions() {
         showNotification(`${transactionsAdded} automated transaction(s) were added.`, 'success');
     } else if (somethingChanged) {
         localStorage.setItem(AUTO_TRANSACTIONS_STORAGE_KEY, JSON.stringify(updatedAutoTransactions));
+    }
+}
+
+// Runs OCR on a picked/received image file, opens the transaction modal, and
+// pre-fills whatever it found. Used by both the manual "Scan Receipt" file
+// picker and by an incoming receipt shared in from another app (WhatsApp,
+// Gallery, etc. — see share-intent.js).
+async function processScannedReceiptFile(file, type = 'expense') {
+    if (elements.ocrLoadingOverlay) {
+        elements.ocrLoadingOverlay.classList.remove('hidden');
+        if (elements.ocrStatusText) elements.ocrStatusText.textContent = 'Reading text from image...';
+    }
+
+    try {
+        const extractedData = await scanReceiptImage(file, type);
+
+        // Open the manual form and pre-fill it with whatever we found
+        openTransactionModal(type);
+
+        if (extractedData.amount) {
+            elements.modalAmount.value = extractedData.amount;
+            if (typeof updateModalAmountWords === 'function') updateModalAmountWords();
+            elements.modalAmount.style.backgroundColor = '#d1fae5';
+            setTimeout(() => elements.modalAmount.style.backgroundColor = '', 1500);
+        }
+
+        if (extractedData.date) {
+            elements.modalDate.value = extractedData.date;
+        }
+
+        if (extractedData.merchant) {
+            elements.modalDescription.value = extractedData.merchant;
+        }
+
+        if (extractedData.category) {
+            let options = Array.from(elements.modalCategory.options);
+            let match = options.find(opt => opt.value.toLowerCase() === extractedData.category.toLowerCase());
+            if (match) {
+                elements.modalCategory.value = match.value;
+            } else {
+                elements.modalCategory.value = 'custom';
+                elements.modalCustomCategoryName.value = extractedData.category;
+                if (typeof handleModalCategoryChange === 'function') handleModalCategoryChange();
+            }
+        }
+
+        if (extractedData.paymentMethod) {
+            elements.modalPaymentMethod.value = extractedData.paymentMethod;
+            if (typeof handleModalPaymentMethodChange === 'function') handleModalPaymentMethodChange();
+        }
+
+        // Auto-select the bank/wallet found on the receipt in the "Select Bank"
+        // dropdown (or drop it into "+ Add Custom Bank" if it's not one of the
+        // presets, e.g. JazzCash/EasyPaisa or a bank not in the default list).
+        if (extractedData.bankName) {
+            const bankOptions = Array.from(elements.modalBankName.options).map(opt => opt.value);
+            if (bankOptions.includes(extractedData.bankName)) {
+                elements.modalBankName.value = extractedData.bankName;
+            } else {
+                elements.modalBankName.value = 'custom';
+                elements.modalCustomBankName.value = extractedData.bankName;
+            }
+            if (typeof handleModalBankNameChange === 'function') handleModalBankNameChange();
+        }
+
+        // Attach the scanned image as the receipt (it will be optimized to ~30KB on save)
+        const dataTransfer = new DataTransfer();
+        dataTransfer.items.add(file);
+        elements.modalReceipt.files = dataTransfer.files;
+        if (typeof handleReceiptPreview === 'function') handleReceiptPreview();
+
+        if (elements.ocrLoadingOverlay) elements.ocrLoadingOverlay.classList.add('hidden');
+
+        if (extractedData.amount || extractedData.date || extractedData.merchant || extractedData.bankName) {
+            showNotification('Receipt scanned. Please review the details.', 'success');
+        } else {
+            showNotification("Couldn't read the receipt clearly. Please fill in the details.", 'error');
+        }
+
+    } catch (err) {
+        console.error('Receipt scan failed:', err);
+        if (elements.ocrLoadingOverlay) elements.ocrLoadingOverlay.classList.add('hidden');
+        showNotification('Scan failed. Please fill details manually.', 'error');
+        openTransactionModal(type);
     }
 }
 
