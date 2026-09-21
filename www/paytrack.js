@@ -727,6 +727,13 @@ async function processPendingSharedReceipt() {
     try { shared = JSON.parse(raw); } catch (e) { return; }
     if (!shared || !shared.uri) return;
 
+    // Finance-tracker projects track both income and expenses, so ask which
+    // this receipt is before scanning. Installment-tracker projects only
+    // ever track payments, so there's nothing to ask — same as the manual
+    // "Scan Receipt" button on that page, which is always expense-only.
+    const type = currentSettings.expenseMode ? await askIncomeOrExpenseForSharedReceipt() : 'expense';
+    if (!type) return; // user dismissed the chooser without picking
+
     try {
         showNotification('Scanning shared receipt...', 'success');
         // Capacitor.convertFileSrc() turns a native file:// / content:// path into
@@ -739,11 +746,44 @@ async function processPendingSharedReceipt() {
         const file = new File([blob], shared.name || 'receipt.jpg', { type: shared.mimeType || blob.type || 'image/jpeg' });
 
         if (elements.inputTypeSelectionModal) elements.inputTypeSelectionModal.classList.add('hidden');
-        await processScannedReceiptFile(file, 'expense');
+        await processScannedReceiptFile(file, type);
     } catch (err) {
         console.error('Could not load shared receipt image:', err);
         showNotification("Couldn't open the shared receipt. Please try scanning it manually.", 'error');
     }
+}
+
+// Small injected modal asking "Add as Expense" or "Add as Income" for a
+// shared receipt on a finance-tracker project. Resolves to 'expense',
+// 'income', or null if the user dismisses it without choosing.
+function askIncomeOrExpenseForSharedReceipt() {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.id = 'ptShareTypeChoiceOverlay';
+        overlay.style.cssText = 'position:fixed;inset:0;z-index:9995;background:rgba(0,0,0,0.55);' +
+            'display:flex;align-items:center;justify-content:center;padding:20px;font-family:inherit;';
+        overlay.innerHTML = `
+            <div style="background:#fff;border-radius:20px;padding:24px;max-width:320px;width:100%;text-align:center;">
+                <i class="fas fa-receipt" style="font-size:1.6rem;color:#764ba2;"></i>
+                <p style="font-weight:700;font-size:1.05rem;margin:10px 0 4px;color:#1a202c;">Scan this receipt as...</p>
+                <p style="font-size:0.85rem;color:#718096;margin:0 0 18px;">This project tracks both income and expenses — which is this?</p>
+                <div style="display:flex;flex-direction:column;gap:10px;">
+                    <button type="button" id="ptShareAsExpense" style="border:none;cursor:pointer;border-radius:12px;padding:12px;font-weight:700;font-size:0.95rem;background:#fee2e2;color:#b91c1c;">
+                        <i class="fas fa-arrow-up mr-1"></i> Add as Expense
+                    </button>
+                    <button type="button" id="ptShareAsIncome" style="border:none;cursor:pointer;border-radius:12px;padding:12px;font-weight:700;font-size:0.95rem;background:#dcfce7;color:#15803d;">
+                        <i class="fas fa-arrow-down mr-1"></i> Add as Income
+                    </button>
+                    <button type="button" id="ptShareCancel" style="border:none;cursor:pointer;background:transparent;color:#a0aec0;font-size:0.8rem;padding:6px;">Cancel</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        const cleanup = (result) => { overlay.remove(); resolve(result); };
+        overlay.querySelector('#ptShareAsExpense').addEventListener('click', () => cleanup('expense'));
+        overlay.querySelector('#ptShareAsIncome').addEventListener('click', () => cleanup('income'));
+        overlay.querySelector('#ptShareCancel').addEventListener('click', () => cleanup(null));
+    });
 }
 
 // Lets share-intent.js hand a receipt straight to this page when the app is
