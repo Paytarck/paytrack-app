@@ -2465,12 +2465,12 @@ function confirmDeleteRecords() {
     elements.deleteAllPasswordInput.focus();
 }
 
-function handleDeleteAllWithPassword() {
+async function handleDeleteAllWithPassword() {
     const password = elements.deleteAllPasswordInput.value;
     const correctPassword = localStorage.getItem(DELETE_PASSWORD_KEY) || '7739';
 
     if (password === correctPassword) {
-        deleteAllRecords();
+        await deleteAllRecords();
         elements.deleteAllPasswordModal.classList.add('hidden');
         elements.deleteAllPasswordInput.value = '';
         elements.deleteAllPasswordError.classList.add('hidden');
@@ -2480,12 +2480,12 @@ function handleDeleteAllWithPassword() {
     }
 }
 
-function deleteAllRecords() {
+async function deleteAllRecords() {
     undoCache = { allRecords: [...appState.payments] };
     const name = appState.projectName;
     appState = getNewState(currentSettings.expenseMode);
     appState.projectName = name;
-    saveData();
+    await saveData();
     updateSummary();
     clearForm();
     showNotification('All records deleted.', 'success', undoDeleteAll);
