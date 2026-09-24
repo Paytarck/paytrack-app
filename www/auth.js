@@ -240,13 +240,6 @@ export async function handleGoogleAuth() {
         }
 
         localStorage.setItem('paytrackUserSession', 'true');
-        // Also mark this session as "already unlocked" the same way lock.js
-        // itself does after a successful PIN/biometric check — otherwise
-        // dashboard.js's own session guard and lock.js's "skip the lock
-        // screen" check (both keyed on sessionStorage, not localStorage)
-        // wrongly treat a freshly logged-in account as still needing to
-        // set up a brand new local device PIN before reaching the dashboard.
-        sessionStorage.setItem('paytrackUserSession', 'true');
         localStorage.setItem('paytrackUsername', username);
         await downloadUserData(username);
         return true;
@@ -263,13 +256,6 @@ export async function registerUser(username, email, phone, pin) {
         data: { projects: [], settings: {}, globalSettings: {} }
     }));
     localStorage.setItem('paytrackUserSession', 'true');
-    // Also mark this session as "already unlocked" the same way lock.js
-    // itself does after a successful PIN/biometric check — otherwise
-    // dashboard.js's own session guard and lock.js's "skip the lock
-    // screen" check (both keyed on sessionStorage, not localStorage)
-    // wrongly treat a freshly logged-in account as still needing to
-    // set up a brand new local device PIN before reaching the dashboard.
-    sessionStorage.setItem('paytrackUserSession', 'true');
     localStorage.setItem('paytrackUsername', username);
     return true;
 }
@@ -311,13 +297,6 @@ export async function loginUser(username, pin) {
     }
 
     localStorage.setItem('paytrackUserSession', 'true');
-    // Also mark this session as "already unlocked" the same way lock.js
-    // itself does after a successful PIN/biometric check — otherwise
-    // dashboard.js's own session guard and lock.js's "skip the lock
-    // screen" check (both keyed on sessionStorage, not localStorage)
-    // wrongly treat a freshly logged-in account as still needing to
-    // set up a brand new local device PIN before reaching the dashboard.
-    sessionStorage.setItem('paytrackUserSession', 'true');
     localStorage.setItem('paytrackUsername', username);
     await downloadUserData(username);
     return true;
@@ -384,8 +363,13 @@ export async function logoutUser() {
         }
     }
 
-    // 2. Clear ALL local data
-    const keysToKeep = ['paytrackDeviceId']; // Keep DeviceID so we don't generate new ones every time
+    // 2. Clear ALL local data EXCEPT device-level settings that have nothing
+    // to do with which account is logged in. In particular, the local
+    // app-lock PIN (dashboardDeletePassword) is created once, the very
+    // first time this device is ever set up, and is intentionally
+    // independent of any account — logging out (or into a different
+    // account later) must never force it to be created again.
+    const keysToKeep = ['paytrackDeviceId', 'dashboardDeletePassword'];
     const allKeys = Object.keys(localStorage);
     
     allKeys.forEach(key => {
