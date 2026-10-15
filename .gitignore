@@ -6,3 +6,11 @@ android/local.properties
 *.keystore
 keystore.properties
 gemni-api.txt
+
+/Paytack/
+/app/
+/paytrack/
+/precedent/
+*.apk
+*.zip
+desktop.ini
