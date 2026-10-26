@@ -75,7 +75,7 @@ const VENDOR_PRECACHE_URLS = [
     'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap',
     'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;800&display=swap', // index.html's splash screen requests a different weight set than the rest of the app
     'https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap',
-    'https://storage.googleapis.com/a1aa/image/4363df2d-cd71-4acb-a7e5-6dadbffa8043.jpg',
+    'vendor/img/4363df2d-cd71-4acb-a7e5-6dadbffa8043.jpg',
     // paytrack.html's feature libraries — precached eagerly (not just cache-first-after-use)
     // so exporting, charting, screenshotting and scanning a receipt all work correctly even
     // the very first time paytrack.html is opened, including on a device that's never been
